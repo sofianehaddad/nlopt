@@ -298,3 +298,30 @@ set (CPACK_SOURCE_IGNORE_FILES ".git;/build;.*~;${CPACK_SOURCE_IGNORE_FILES}")
 set (CPACK_SOURCE_PACKAGE_FILE_NAME ${CPACK_PACKAGE_NAME}-${NLOPT_VERSION_STRING})
 
 include (CPack)
+
+# write .def file
+if (MINGW AND BUILD_SHARED_LIBS)
+  execute_process (COMMAND ${CMAKE_C_COMPILER} -dumpmachine
+                   OUTPUT_VARIABLE TARGET_TRIPLET
+                   OUTPUT_STRIP_TRAILING_WHITESPACE)
+  if (TARGET_TRIPLET)
+    find_program (NM_EXECUTABLE NAMES ${TARGET_TRIPLET}-nm)
+    if (NM_EXECUTABLE)
+      file (WRITE ${CMAKE_CURRENT_BINARY_DIR}/generate-def.cmake "file (WRITE \${DEF_FILE} \"LIBRARY libnlopt.dll\\nEXPORTS\\n\")\n")
+      file (APPEND ${CMAKE_CURRENT_BINARY_DIR}/generate-def.cmake "execute_process (COMMAND \${NM_EXECUTABLE} \${DLL_FILE} OUTPUT_FILE \${NM_FILE})\n")
+      file (APPEND ${CMAKE_CURRENT_BINARY_DIR}/generate-def.cmake "file (STRINGS \${NM_FILE} NM_LINES)\n")
+      file (APPEND ${CMAKE_CURRENT_BINARY_DIR}/generate-def.cmake "foreach (NM_LINE \${NM_LINES})\n")
+      file (APPEND ${CMAKE_CURRENT_BINARY_DIR}/generate-def.cmake "  if (NM_LINE MATCHES \" T _\" AND (NM_LINE MATCHES \"nlopt\" OR NM_LINE MATCHES \"nlo_\"))\n")
+      file (APPEND ${CMAKE_CURRENT_BINARY_DIR}/generate-def.cmake "    string (REGEX REPLACE \".* T _(.*)\" \"\\\\1\" DEF_LINE \${NM_LINE})\n")
+      file (APPEND ${CMAKE_CURRENT_BINARY_DIR}/generate-def.cmake "    file (APPEND \${DEF_FILE} \"\${DEF_LINE}\n\")\n")
+      file (APPEND ${CMAKE_CURRENT_BINARY_DIR}/generate-def.cmake "  endif ()\n")
+      file (APPEND ${CMAKE_CURRENT_BINARY_DIR}/generate-def.cmake "endforeach ()\n")
+      add_custom_command (OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/libnlopt.def
+                          COMMAND ${CMAKE_COMMAND} -DNM_EXECUTABLE=${NM_EXECUTABLE} -DDEF_FILE=${CMAKE_CURRENT_BINARY_DIR}/libnlopt.def -DNM_FILE=${CMAKE_CURRENT_BINARY_DIR}/libnlopt.nm -DDLL_FILE=${CMAKE_CURRENT_BINARY_DIR}/libnlopt.dll -P ${CMAKE_CURRENT_BINARY_DIR}/generate-def.cmake
+                          DEPENDS ${nlopt_lib}
+                          BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/libnlopt.def)
+      add_custom_target(def_file ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/libnlopt.def)
+    endif ()
+  endif ()
+  install (FILES ${CMAKE_CURRENT_BINARY_DIR}/libnlopt.def DESTINATION bin)
+endif ()
